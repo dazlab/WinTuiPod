@@ -9,6 +9,47 @@ internal sealed class TuiApp
     private readonly DataStore _store;
     private readonly AudioPlayer _player;
 
+    // Now Playing state
+    private Episode? _nowPlayingEpisode;
+    private string? _nowPlayingPath;
+
+    private volatile bool _isDownloading;
+    private volatile int _downloadPercent; // 0..100
+
+    private readonly SemaphoreSlim _playLock = new(1, 1);
+    
+    // UI theme
+    private static class Ui
+    {
+        private static int _themeIndex = 0;
+        private static readonly (Color Accent, string TitleColor)[] Themes =
+        {
+            (Color.CornflowerBlue, "#87AFFF"), // Blue
+            (Color.Green, "#5FFF87"),          // Green
+            (Color.Gold1, "#FFD75F"),          // Amber
+            (Color.Grey, "#AAAAAA"),           // Mono
+        };
+
+        public static Color Accent => Themes[_themeIndex].Accent;
+        public static Color Border => Accent;
+        public static Color SubtleBorder => Color.Grey37;
+
+        public static string Title =>
+            $"[bold {Themes[_themeIndex].TitleColor}]WinTuiPod[/]  [grey](MVP)[/]";
+
+        public const string Hint =
+            "Up/Down: move  Enter: select  Esc: back  P: play/pause  S: stop  ←/→: seek  T: theme";
+
+        public static string SelOpen =>
+            $"[black on {Themes[_themeIndex].TitleColor}]";
+        public const string SelClose = "[/]";
+
+        public static void NextTheme()
+        {
+            _themeIndex = (_themeIndex + 1) % Themes.Length;
+        }
+    }
+
     public TuiApp(DataStore store, AudioPlayer player)
     {
         _store = store;
@@ -32,10 +73,12 @@ internal sealed class TuiApp
 
             var choice = LiveSelect(
                 title: "Select an action",
-                help: "Up/Down: move   Enter: select   Esc: quit",
+                help: "Up/Down: move   Enter: select   Esc: quit   P: play/pause   S: stop   ←/→: seek",
                 items: actions,
                 line: s => Markup.Escape(s),
-                pageSize: 10);
+                pageSize: 10,
+                footer: BuildNowPlayingFooter,
+                keyHandler: (key, _) => HandleGlobalPlaybackKeys(key));
 
             if (choice is null || choice == "Quit")
                 break;
@@ -63,10 +106,12 @@ internal sealed class TuiApp
 
                 var sub = LiveSelect(
                     title: "Select a feed",
-                    help: "Up/Down: move   Enter: select   Esc: back",
+                    help: "Up/Down: move   Enter: select   Esc: back   P: play/pause   S: stop   ←/→: seek",
                     items: subs,
                     line: s => Markup.Escape(string.IsNullOrWhiteSpace(s.Title) ? s.FeedUrl : s.Title),
-                    pageSize: 15);
+                    pageSize: 15,
+                    footer: BuildNowPlayingFooter,
+                    keyHandler: (key, _) => HandleGlobalPlaybackKeys(key));
 
                 if (sub is null)
                     continue;
@@ -76,7 +121,7 @@ internal sealed class TuiApp
             }
         }
 
-        _player.Stop();
+        StopPlayback();
     }
 
     private static void RenderHeader()
@@ -100,10 +145,130 @@ internal sealed class TuiApp
         grid.AddColumn(new GridColumn().RightAligned());
 
         grid.AddRow(
-            new Markup("[bold]WinTuiPod[/]  (MVP)"),
+            new Markup(Ui.Title),
             new Markup($"[grey]{Markup.Escape(rightText)}[/]"));
 
-        return new Panel(grid).RoundedBorder();
+        return new Panel(grid)
+            .RoundedBorder()
+            .BorderColor(Ui.SubtleBorder);
+    }
+
+
+    private IRenderable BuildNowPlayingFooter()
+    {
+        var left = "[grey]Idle[/]";
+        if (_nowPlayingEpisode is not null)
+            left = $"[bold]{Markup.Escape(_nowPlayingEpisode.Title)}[/]";
+
+        string right;
+        if (_isDownloading)
+        {
+            right = $"[yellow]Downloading {_downloadPercent}%[/]";
+        }
+        else if (_player.IsPlaying)
+        {
+            right = $"[green]Playing[/] {_player.Position:mm\\:ss}/{_player.Duration:mm\\:ss}";
+        }
+        else if (_player.Duration > TimeSpan.Zero)
+        {
+            right = $"[yellow]Paused[/] {_player.Position:mm\\:ss}/{_player.Duration:mm\\:ss}";
+        }
+        else
+        {
+            right = "[grey]Stopped[/]";
+        }
+
+        var grid = new Grid();
+        grid.AddColumn();
+        grid.AddColumn(new GridColumn().RightAligned());
+        grid.AddRow(new Markup(left), new Markup(right));
+
+        return new Panel(grid)
+            .RoundedBorder()
+            .BorderColor(Ui.SubtleBorder)
+            .Header("Now Playing", Justify.Left);
+    }
+
+    private bool HandleGlobalPlaybackKeys(ConsoleKeyInfo key)
+    {
+        if (key.Key == ConsoleKey.T)
+        {
+            Ui.NextTheme();
+            return true; // force redraw
+        }
+
+        if (key.Key == ConsoleKey.P)
+        {
+            _player.TogglePause();
+            return true;
+        }
+
+        if (key.Key == ConsoleKey.S)
+        {
+            StopPlayback();
+            return true;
+        }
+
+        if (key.Key == ConsoleKey.LeftArrow)
+        {
+            _player.SeekBy(TimeSpan.FromSeconds(-15));
+            return true;
+        }
+
+        if (key.Key == ConsoleKey.RightArrow)
+        {
+            _player.SeekBy(TimeSpan.FromSeconds(+15));
+            return true;
+        }
+
+        return false;
+    }
+
+    private void StopPlayback()
+    {
+        _player.Stop();
+        _nowPlayingEpisode = null;
+        _nowPlayingPath = null;
+        _isDownloading = false;
+        _downloadPercent = 0;
+    }
+
+    private async Task StartPlayAsync(Episode ep)
+    {
+        await _playLock.WaitAsync();
+        try
+        {
+            _player.Stop();
+
+            _nowPlayingEpisode = ep;
+            _nowPlayingPath = null;
+
+            _isDownloading = true;
+            _downloadPercent = 0;
+
+            var prog = new Progress<double>(p =>
+            {
+                if (p < 0) p = 0;
+                if (p > 1) p = 1;
+                _downloadPercent = (int)Math.Round(p * 100);
+            });
+
+            var path = await EpisodeDownloader.EnsureDownloadedAsync(ep, _store, prog);
+
+            _isDownloading = false;
+            _downloadPercent = 0;
+
+            _nowPlayingPath = path;
+            _player.PlayFile(path);
+        }
+        catch
+        {
+            StopPlayback();
+        }
+        finally
+        {
+            _playLock.Release();
+        }
     }
 
     private async Task AddSubscriptionAsync(List<Subscription> subs)
@@ -161,10 +326,12 @@ internal sealed class TuiApp
 
         var sub = LiveSelect(
             title: "Remove which feed?",
-            help: "Up/Down: move   Enter: remove   Esc: back",
+            help: "Up/Down: move   Enter: remove   Esc: back   P: play/pause   S: stop   ←/→: seek",
             items: subs,
             line: s => Markup.Escape(s.Title),
-            pageSize: 15);
+            pageSize: 15,
+            footer: BuildNowPlayingFooter,
+            keyHandler: (key, _) => HandleGlobalPlaybackKeys(key));
 
         if (sub is null)
             return;
@@ -211,7 +378,7 @@ internal sealed class TuiApp
 
             var selected = LiveSelect(
                 title: "Episodes",
-                help: "Up/Down: move   Enter: select   Esc: back",
+                help: "Up/Down: move   Enter: actions   Space: play   P: play/pause   S: stop   ←/→: seek   M: mark played   Esc: back",
                 items: episodes,
                 line: ep =>
                 {
@@ -221,7 +388,28 @@ internal sealed class TuiApp
                     if (played) t = "[grey](played)[/] " + t;
                     return $"[bold]{Markup.Escape(date)}[/]  {t}";
                 },
-                pageSize: 15);
+                pageSize: 15,
+                footer: BuildNowPlayingFooter,
+                keyHandler: (key, currentEp) =>
+                {
+                    if (HandleGlobalPlaybackKeys(key))
+                        return true;
+
+                    if (key.Key == ConsoleKey.Spacebar)
+                    {
+                        _ = StartPlayAsync(currentEp);
+                        return true;
+                    }
+
+                    if (key.Key == ConsoleKey.M)
+                    {
+                        if (!string.IsNullOrWhiteSpace(currentEp.Id))
+                            state.PlayedEpisodeIds.Add(currentEp.Id);
+                        return true;
+                    }
+
+                    return false;
+                });
 
             if (selected is null)
                 return;
@@ -234,19 +422,6 @@ internal sealed class TuiApp
     {
         while (true)
         {
-            AnsiConsole.Clear();
-            RenderHeader();
-
-            AnsiConsole.MarkupLine($"[bold]{Markup.Escape(ep.Title)}[/]");
-            AnsiConsole.MarkupLine($"[grey]{Markup.Escape(ep.AudioUrl)}[/]");
-            AnsiConsole.WriteLine();
-
-            var status = _player.IsPlaying ? "Playing" : "Stopped/Paused";
-            var pos = $"{_player.Position:mm\\:ss} / {_player.Duration:mm\\:ss}";
-            AnsiConsole.Write(new Panel($"[bold]{status}[/]  {pos}").RoundedBorder());
-
-            AnsiConsole.WriteLine();
-
             var actions = new List<string>
             {
                 "Play (download if needed)",
@@ -259,30 +434,20 @@ internal sealed class TuiApp
             };
 
             var cmd = LiveSelect(
-                title: "Episode actions",
-                help: "Up/Down: move   Enter: select   Esc: back",
+                title: ep.Title,
+                help: "Enter: run action   Esc: back   P: play/pause   S: stop   ←/→: seek",
                 items: actions,
                 line: s => Markup.Escape(s),
-                pageSize: 10);
+                pageSize: 10,
+                footer: BuildNowPlayingFooter,
+                keyHandler: (key, _) => HandleGlobalPlaybackKeys(key));
 
             if (cmd is null || cmd == "Back")
                 return;
 
             if (cmd.StartsWith("Play (download", StringComparison.Ordinal))
             {
-                string filePath = "";
-
-                await AnsiConsole.Progress()
-                    .StartAsync(async ctx =>
-                    {
-                        var task = ctx.AddTask("Downloading", autoStart: true);
-                        var prog = new Progress<double>(p => task.Value = p * 100);
-
-                        filePath = await EpisodeDownloader.EnsureDownloadedAsync(ep, _store, prog);
-                        task.Value = 100;
-                    });
-
-                _player.PlayFile(filePath);
+                _ = StartPlayAsync(ep);
             }
             else if (cmd.StartsWith("Play/Pause", StringComparison.Ordinal))
             {
@@ -290,7 +455,7 @@ internal sealed class TuiApp
             }
             else if (cmd.StartsWith("Stop", StringComparison.Ordinal))
             {
-                _player.Stop();
+                StopPlayback();
             }
             else if (cmd.StartsWith("Seek -15", StringComparison.Ordinal))
             {
@@ -305,24 +470,31 @@ internal sealed class TuiApp
                 if (!string.IsNullOrWhiteSpace(ep.Id))
                     state.PlayedEpisodeIds.Add(ep.Id);
 
+                AnsiConsole.Clear();
+                RenderHeader();
                 AnsiConsole.MarkupLine("[green]Marked played.[/]");
                 WaitKey();
             }
+
+            await Task.CompletedTask;
         }
     }
 
-    private static T? LiveSelect<T>(
+    private T? LiveSelect<T>(
         string title,
         string help,
         IReadOnlyList<T> items,
         Func<T, string> line,
-        int pageSize = 15)
+        int pageSize = 15,
+        Func<IRenderable>? footer = null,
+        Func<ConsoleKeyInfo, T, bool>? keyHandler = null)
     {
         if (items.Count == 0)
             return default;
 
         var index = 0;
         var top = 0;
+        var animFrame = 0;
         T? selected = default;
 
         AnsiConsole.Clear();
@@ -339,9 +511,21 @@ internal sealed class TuiApp
 
                     ctx.UpdateTarget(BuildLayout());
                     ctx.Refresh();
+                    animFrame++;
 
-                    var key = Console.ReadKey(true).Key;
-                    switch (key)
+                    if (!Console.KeyAvailable)
+                    {
+                        Thread.Sleep(120);
+                        continue;
+                    }
+
+                    var key = Console.ReadKey(true);
+                    var current = items[index];
+
+                    if (keyHandler is not null && keyHandler(key, current))
+                        continue;
+
+                    switch (key.Key)
                     {
                         case ConsoleKey.UpArrow: index--; break;
                         case ConsoleKey.DownArrow: index++; break;
@@ -367,13 +551,23 @@ internal sealed class TuiApp
 
             var table = new Table()
                 .Border(TableBorder.Rounded)
+                .BorderColor(Ui.Border)
                 .AddColumn(new TableColumn("Item"));
+
 
             var end = Math.Min(top + pageSize, items.Count);
             for (var i = top; i < end; i++)
             {
                 var text = line(items[i]);
-                table.AddRow(i == index ? $"[reverse]{text}[/]" : text);
+                if (i == index)
+                {
+                    var glyph = (animFrame % 2 == 0) ? "▸" : "▹";
+                    table.AddRow($"{Ui.SelOpen} {glyph} {text}{Ui.SelClose}");
+                }
+                else
+                {
+                    table.AddRow($"   {text}");
+                }
             }
 
             var body = new Grid();
@@ -381,9 +575,16 @@ internal sealed class TuiApp
             body.AddRow(header);
             body.AddEmptyRow();
             body.AddRow(new Markup($"[bold]{Markup.Escape(title)}[/]"));
-            body.AddRow(new Markup($"[grey]{Markup.Escape(help)}[/]"));
+            body.AddRow(new Markup($"[grey italic]{Markup.Escape(help)}[/]"));
             body.AddEmptyRow();
             body.AddRow(table);
+
+            if (footer is not null)
+            {
+                body.AddEmptyRow();
+                body.AddRow(footer());
+            }
+
             return body;
         }
 
@@ -397,7 +598,7 @@ internal sealed class TuiApp
         }
     }
 
-    private static string? PromptTextOrEsc(string title, string help)
+    private string? PromptTextOrEsc(string title, string help)
     {
         var input = new System.Text.StringBuilder();
         string? result = null;
@@ -415,19 +616,28 @@ internal sealed class TuiApp
                     ctx.UpdateTarget(BuildLayout());
                     ctx.Refresh();
 
+                    if (!Console.KeyAvailable)
+                    {
+                        Thread.Sleep(120);
+                        continue;
+                    }
+
                     var key = Console.ReadKey(true);
+
+                    if (HandleGlobalPlaybackKeys(key))
+                        continue;
 
                     if (key.Key == ConsoleKey.Escape)
                     {
-                        result = null; // cancel
+                        result = null;
                         return;
                     }
 
                     if (key.Key == ConsoleKey.Enter)
                     {
-                        result = input.ToString(); // accept
+                        result = input.ToString();
                         return;
-                    }   
+                    }
 
                     if (key.Key == ConsoleKey.Backspace)
                     {
@@ -447,7 +657,7 @@ internal sealed class TuiApp
 
         IRenderable BuildLayout()
         {
-            var header = BuildHeaderRenderable("Type: input  Enter: confirm  Esc: back");
+            var header = BuildHeaderRenderable("Type URL  Enter: confirm  Esc: back  P: play/pause  S: stop  ←/→: seek");
 
             var shown = Markup.Escape(input.ToString());
             var panel = new Panel(shown.Length == 0 ? "[grey](empty)[/]" : shown)
@@ -462,6 +672,8 @@ internal sealed class TuiApp
             body.AddRow(new Markup($"[grey]{Markup.Escape(help)}[/]"));
             body.AddEmptyRow();
             body.AddRow(panel);
+            body.AddEmptyRow();
+            body.AddRow(BuildNowPlayingFooter());
 
             return body;
         }
