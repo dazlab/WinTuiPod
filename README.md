@@ -53,7 +53,7 @@ Contributions, feedback, and bug reports are welcome.
 
 ## Download
 
-Releases are published on the GitHub **Releases** page.
+This project is currently in Alpha, but there is a version 0.1.0 x64 binary on the GitHub **Releases** page.
 
 ## Requirements
 
