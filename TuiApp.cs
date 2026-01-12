@@ -1,5 +1,6 @@
 // TuiApp.cs
 using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace WinTuiPod;
 
@@ -29,11 +30,11 @@ internal sealed class TuiApp
                 "Quit"
             };
 
-            var choice = SelectFromList(
+            var choice = LiveSelect(
                 title: "Select an action",
                 help: "Up/Down: move   Enter: select   Esc: quit",
                 items: actions,
-                render: s => Markup.Escape(s),
+                line: s => Markup.Escape(s),
                 pageSize: 10);
 
             if (choice is null || choice == "Quit")
@@ -60,15 +61,15 @@ internal sealed class TuiApp
                     continue;
                 }
 
-                var sub = SelectFromList(
+                var sub = LiveSelect(
                     title: "Select a feed",
                     help: "Up/Down: move   Enter: select   Esc: back",
                     items: subs,
-                    render: s => Markup.Escape(string.IsNullOrWhiteSpace(s.Title) ? s.FeedUrl : s.Title),
+                    line: s => Markup.Escape(string.IsNullOrWhiteSpace(s.Title) ? s.FeedUrl : s.Title),
                     pageSize: 15);
 
                 if (sub is null)
-                    continue; // Esc -> back to main menu
+                    continue;
 
                 await BrowseFeedAsync(sub, state);
                 await _store.SaveStateAsync(state);
@@ -92,6 +93,19 @@ internal sealed class TuiApp
         AnsiConsole.WriteLine();
     }
 
+    private static IRenderable BuildHeaderRenderable(string rightText)
+    {
+        var grid = new Grid();
+        grid.AddColumn();
+        grid.AddColumn(new GridColumn().RightAligned());
+
+        grid.AddRow(
+            new Markup("[bold]WinTuiPod[/]  (MVP)"),
+            new Markup($"[grey]{Markup.Escape(rightText)}[/]"));
+
+        return new Panel(grid).RoundedBorder();
+    }
+
     private async Task AddSubscriptionAsync(List<Subscription> subs)
     {
         var url = PromptTextOrEsc(
@@ -99,7 +113,7 @@ internal sealed class TuiApp
             help: "Paste the RSS/Atom feed URL. Enter: confirm   Esc: back");
 
         if (url is null)
-            return; // Esc -> back
+            return;
 
         url = url.Trim();
         if (url.Length == 0)
@@ -134,7 +148,6 @@ internal sealed class TuiApp
         WaitKey();
     }
 
-
     private async Task RemoveSubscriptionAsync(List<Subscription> subs)
     {
         if (subs.Count == 0)
@@ -146,15 +159,15 @@ internal sealed class TuiApp
             return;
         }
 
-        var sub = SelectFromList(
+        var sub = LiveSelect(
             title: "Remove which feed?",
             help: "Up/Down: move   Enter: remove   Esc: back",
             items: subs,
-            render: s => Markup.Escape(s.Title),
+            line: s => Markup.Escape(s.Title),
             pageSize: 15);
 
         if (sub is null)
-            return; // Esc -> back
+            return;
 
         subs.Remove(sub);
 
@@ -196,9 +209,22 @@ internal sealed class TuiApp
                 return;
             }
 
-            var selected = SelectEpisode(episodes, state);
+            var selected = LiveSelect(
+                title: "Episodes",
+                help: "Up/Down: move   Enter: select   Esc: back",
+                items: episodes,
+                line: ep =>
+                {
+                    var date = ep.Published?.ToString("yyyy-MM-dd") ?? "---- -- --";
+                    var played = ep.Id is not null && state.PlayedEpisodeIds.Contains(ep.Id);
+                    var t = Markup.Escape(ep.Title);
+                    if (played) t = "[grey](played)[/] " + t;
+                    return $"[bold]{Markup.Escape(date)}[/]  {t}";
+                },
+                pageSize: 15);
+
             if (selected is null)
-                return; // Esc -> back to subscriptions
+                return;
 
             await EpisodeMenuAsync(selected, state);
         }
@@ -232,11 +258,11 @@ internal sealed class TuiApp
                 "Back"
             };
 
-            var cmd = SelectFromList(
+            var cmd = LiveSelect(
                 title: "Episode actions",
                 help: "Up/Down: move   Enter: select   Esc: back",
                 items: actions,
-                render: s => Markup.Escape(s),
+                line: s => Markup.Escape(s),
                 pageSize: 10);
 
             if (cmd is null || cmd == "Back")
@@ -285,103 +311,59 @@ internal sealed class TuiApp
         }
     }
 
-    private static Episode? SelectEpisode(IReadOnlyList<Episode> episodes, AppState state)
-    {
-        var index = 0;
-        var top = 0;
-        const int pageSize = 15;
-
-        while (true)
-        {
-            AnsiConsole.Clear();
-            RenderHeader();
-            AnsiConsole.MarkupLine("[bold]Episodes[/]");
-            AnsiConsole.MarkupLine("[grey]Up/Down: move   Enter: select   Esc: back[/]");
-            AnsiConsole.WriteLine();
-
-            if (index < 0) index = 0;
-            if (index >= episodes.Count) index = episodes.Count - 1;
-            if (index < top) top = index;
-            if (index >= top + pageSize) top = index - pageSize + 1;
-            if (top < 0) top = 0;
-
-            var table = new Table()
-                .Border(TableBorder.Rounded)
-                .AddColumn(new TableColumn("Date").NoWrap())
-                .AddColumn(new TableColumn("Title"));
-
-            var end = Math.Min(top + pageSize, episodes.Count);
-            for (var i = top; i < end; i++)
-            {
-                var ep = episodes[i];
-                var date = ep.Published?.ToString("yyyy-MM-dd") ?? "---- -- --";
-
-                var played = ep.Id is not null && state.PlayedEpisodeIds.Contains(ep.Id);
-                var title = Markup.Escape(ep.Title);
-                if (played) title = "[grey](played)[/] " + title;
-
-                if (i == index)
-                    table.AddRow($"[bold]{date}[/]", $"[reverse]{title}[/]");
-                else
-                    table.AddRow(date, title);
-            }
-
-            AnsiConsole.Write(table);
-
-            var key = Console.ReadKey(true).Key;
-            switch (key)
-            {
-                case ConsoleKey.UpArrow:
-                    index--;
-                    break;
-
-                case ConsoleKey.DownArrow:
-                    index++;
-                    break;
-
-                case ConsoleKey.PageUp:
-                    index -= pageSize;
-                    break;
-
-                case ConsoleKey.PageDown:
-                    index += pageSize;
-                    break;
-
-                case ConsoleKey.Enter:
-                    return episodes[index];
-
-                case ConsoleKey.Escape:
-                    return null;
-            }
-        }
-    }
-
-    private static T? SelectFromList<T>(
+    private static T? LiveSelect<T>(
         string title,
         string help,
         IReadOnlyList<T> items,
-        Func<T, string> render,
+        Func<T, string> line,
         int pageSize = 15)
     {
-        if (items.Count == 0) return default;
+        if (items.Count == 0)
+            return default;
 
         var index = 0;
         var top = 0;
+        T? selected = default;
 
-        while (true)
+        AnsiConsole.Clear();
+
+        AnsiConsole.Live(BuildLayout())
+            .AutoClear(false)
+            .Overflow(VerticalOverflow.Ellipsis)
+            .Cropping(VerticalOverflowCropping.Bottom)
+            .Start(ctx =>
+            {
+                while (true)
+                {
+                    ClampAndPage(items.Count, pageSize, ref index, ref top);
+
+                    ctx.UpdateTarget(BuildLayout());
+                    ctx.Refresh();
+
+                    var key = Console.ReadKey(true).Key;
+                    switch (key)
+                    {
+                        case ConsoleKey.UpArrow: index--; break;
+                        case ConsoleKey.DownArrow: index++; break;
+                        case ConsoleKey.PageUp: index -= pageSize; break;
+                        case ConsoleKey.PageDown: index += pageSize; break;
+
+                        case ConsoleKey.Enter:
+                            selected = items[index];
+                            return;
+
+                        case ConsoleKey.Escape:
+                            selected = default;
+                            return;
+                    }
+                }
+            });
+
+        return selected;
+
+        IRenderable BuildLayout()
         {
-            AnsiConsole.Clear();
-            RenderHeader();
-            AnsiConsole.MarkupLine($"[bold]{Markup.Escape(title)}[/]");
-            if (!string.IsNullOrWhiteSpace(help))
-                AnsiConsole.MarkupLine($"[grey]{Markup.Escape(help)}[/]");
-            AnsiConsole.WriteLine();
-
-            if (index < 0) index = 0;
-            if (index >= items.Count) index = items.Count - 1;
-            if (index < top) top = index;
-            if (index >= top + pageSize) top = index - pageSize + 1;
-            if (top < 0) top = 0;
+            var header = BuildHeaderRenderable("Up/Down: move  Enter: select  Esc: back");
 
             var table = new Table()
                 .Border(TableBorder.Rounded)
@@ -390,40 +372,98 @@ internal sealed class TuiApp
             var end = Math.Min(top + pageSize, items.Count);
             for (var i = top; i < end; i++)
             {
-                var text = render(items[i]);
-                if (i == index)
-                    table.AddRow($"[reverse]{text}[/]");
-                else
-                    table.AddRow(text);
+                var text = line(items[i]);
+                table.AddRow(i == index ? $"[reverse]{text}[/]" : text);
             }
 
-            AnsiConsole.Write(table);
+            var body = new Grid();
+            body.AddColumn();
+            body.AddRow(header);
+            body.AddEmptyRow();
+            body.AddRow(new Markup($"[bold]{Markup.Escape(title)}[/]"));
+            body.AddRow(new Markup($"[grey]{Markup.Escape(help)}[/]"));
+            body.AddEmptyRow();
+            body.AddRow(table);
+            return body;
+        }
 
-            var key = Console.ReadKey(true).Key;
-            switch (key)
+        static void ClampAndPage(int count, int pageSize, ref int index, ref int top)
+        {
+            if (index < 0) index = 0;
+            if (index >= count) index = count - 1;
+            if (index < top) top = index;
+            if (index >= top + pageSize) top = index - pageSize + 1;
+            if (top < 0) top = 0;
+        }
+    }
+
+    private static string? PromptTextOrEsc(string title, string help)
+    {
+        var input = new System.Text.StringBuilder();
+        string? result = null;
+
+        AnsiConsole.Clear();
+
+        AnsiConsole.Live(BuildLayout())
+            .AutoClear(false)
+            .Overflow(VerticalOverflow.Ellipsis)
+            .Cropping(VerticalOverflowCropping.Bottom)
+            .Start(ctx =>
             {
-                case ConsoleKey.UpArrow:
-                    index--;
-                    break;
+                while (true)
+                {
+                    ctx.UpdateTarget(BuildLayout());
+                    ctx.Refresh();
 
-                case ConsoleKey.DownArrow:
-                    index++;
-                    break;
+                    var key = Console.ReadKey(true);
 
-                case ConsoleKey.PageUp:
-                    index -= pageSize;
-                    break;
+                    if (key.Key == ConsoleKey.Escape)
+                    {
+                        result = null; // cancel
+                        return;
+                    }
 
-                case ConsoleKey.PageDown:
-                    index += pageSize;
-                    break;
+                    if (key.Key == ConsoleKey.Enter)
+                    {
+                        result = input.ToString(); // accept
+                        return;
+                    }   
 
-                case ConsoleKey.Enter:
-                    return items[index];
+                    if (key.Key == ConsoleKey.Backspace)
+                    {
+                        if (input.Length > 0)
+                            input.Length--;
+                        continue;
+                    }
 
-                case ConsoleKey.Escape:
-                    return default;
-            }
+                    if (char.IsControl(key.KeyChar))
+                        continue;
+
+                    input.Append(key.KeyChar);
+                }
+            });
+
+        return result;
+
+        IRenderable BuildLayout()
+        {
+            var header = BuildHeaderRenderable("Type: input  Enter: confirm  Esc: back");
+
+            var shown = Markup.Escape(input.ToString());
+            var panel = new Panel(shown.Length == 0 ? "[grey](empty)[/]" : shown)
+                .RoundedBorder()
+                .Header("Input", Justify.Left);
+
+            var body = new Grid();
+            body.AddColumn();
+            body.AddRow(header);
+            body.AddEmptyRow();
+            body.AddRow(new Markup($"[bold]{Markup.Escape(title)}[/]"));
+            body.AddRow(new Markup($"[grey]{Markup.Escape(help)}[/]"));
+            body.AddEmptyRow();
+            body.AddRow(panel);
+
+            return body;
         }
     }
 
@@ -432,68 +472,4 @@ internal sealed class TuiApp
         AnsiConsole.MarkupLine("[grey]Press any key...[/]");
         Console.ReadKey(true);
     }
-    
-    private static bool? PromptYesNoOrEsc(string title, string question, bool defaultYes = true)
-    {
-        while (true)
-        {
-            AnsiConsole.Clear();
-            RenderHeader();
-            AnsiConsole.MarkupLine($"[bold]{Markup.Escape(title)}[/]");
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine(Markup.Escape(question));
-            AnsiConsole.MarkupLine("[grey]Y/N: choose   Enter: accept default   Esc: back[/]");
-            AnsiConsole.MarkupLine($"[grey]Default: {(defaultYes ? "Yes" : "No")}[/]");
-
-            var key = Console.ReadKey(true);
-
-            if (key.Key == ConsoleKey.Escape) return null;
-            if (key.Key == ConsoleKey.Enter) return defaultYes;
-
-            if (key.Key == ConsoleKey.Y) return true;
-            if (key.Key == ConsoleKey.N) return false;
-        }
-    }
-
-    
-    private static string? PromptTextOrEsc(string title, string help)
-    {
-        var input = new System.Text.StringBuilder();
-
-        while (true)
-        {
-            AnsiConsole.Clear();
-            RenderHeader();
-            AnsiConsole.MarkupLine($"[bold]{Markup.Escape(title)}[/]");
-            if (!string.IsNullOrWhiteSpace(help))
-                AnsiConsole.MarkupLine($"[grey]{Markup.Escape(help)}[/]");
-            AnsiConsole.WriteLine();
-
-            var shown = Markup.Escape(input.ToString());
-            AnsiConsole.Write(new Panel(shown.Length == 0 ? "[grey](empty)[/]" : shown)
-                .RoundedBorder()
-                .Header("Input", Justify.Left));
-
-            var key = Console.ReadKey(true);
-
-            if (key.Key == ConsoleKey.Escape)
-                return null;
-
-            if (key.Key == ConsoleKey.Enter)
-                return input.ToString();
-
-            if (key.Key == ConsoleKey.Backspace)
-            {
-                if (input.Length > 0)
-                    input.Length--;
-                continue;
-            }
-
-            if (char.IsControl(key.KeyChar))
-                continue;
-
-            input.Append(key.KeyChar);
-        }
-    }
-   
 }
