@@ -43,13 +43,13 @@ Contributions, feedback, and bug reports are welcome.
 
 ## Screenshots
 ### Main Startup Screen
-![WinTuiRss main screen](screenshots/main-ui.png)
+![WinTuiRss main screen](screenshots/ui-main.png)
 
 ### Podcast Playlist
-![WinTuiRss main screen](screenshots/main-playlist.png)
+![WinTuiRss main screen](screenshots/ui-playlist.png)
 
 ### Integrated Player
-![WinTuiRss main screen](screenshots/main-player.png)
+![WinTuiRss main screen](screenshots/ui-player.png)
 
 ## Download
 
