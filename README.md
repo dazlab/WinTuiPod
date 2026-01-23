@@ -1,4 +1,4 @@
-# WinTuiPod
+![Header](screenshots/github-header-banner.png)
 
 If you’re like me, you spend a lot of time on the command line. On Linux, that’s second nature; terminal users are first-class citizens on *nix systems. 
 On Windows, it’s still oddly uncomfortable— and the ecosystem of *native*, terminal-first tools is thin.
