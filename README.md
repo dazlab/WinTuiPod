@@ -3,7 +3,7 @@
 [![License](https://img.shields.io/github/license/dazlab/WinTuiPod)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/dazlab/WinTuiPod)](https://github.com/dazlab/WinTuiPod/issues)
 ![Downloads](https://img.shields.io/github/downloads/dazlab/WinTuiPod/total?cacheBust=2)
-[![Build](https://github.com/dazlab/WinTuiPod/actions/workflows/dotnet-desktop.yml/badge.svg?branch=master&cacheBust=1)](https://github.com/dazlab/WinTuiPod/actions/workflows/dotnet-desktop.yml)
+[![Build](https://github.com/dazlab/WinTuiPod/actions/workflows/dotnet.yml/badge.svg?branch=master&cacheBust=1)](https://github.com/dazlab/WinTuiPod/actions/workflows/dotnet.yml)
 
 If you’re like me, you spend a lot of time on the command line. On Linux, that’s second nature; terminal users are first-class citizens on *nix systems. 
 On Windows, it’s still oddly uncomfortable— and the ecosystem of *native*, terminal-first tools is thin.
