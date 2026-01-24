@@ -29,6 +29,7 @@ No Electron. No browser UI. Just a clean terminal experience.
 WinTuiPod is part of a small family of Windows-native TUI applications:
 
 - **[WinTuiRss](https://github.com/dazlab/WinTuiRss)** — a terminal RSS reader for Windows  
+- **[WinTuiNotes](https://github.com/dazlab/WinTuiNotes)** - a terminal notes management app
 - **[WinTuiEditor](https://github.com/dazlab/WinTuiEditor)** — a simple, terminal-based text editor  
 - **WinTuiPod** — podcasts, from the terminal
 
