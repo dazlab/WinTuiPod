@@ -5,17 +5,31 @@ namespace WinTuiPod;
 internal sealed class AudioPlayer : IDisposable
 {
     private IWavePlayer? _output;
-    private AudioFileReader? _reader;
+    private WaveStream? _reader;
+    private bool _isLiveStream;
 
     public bool IsPlaying => _output?.PlaybackState == PlaybackState.Playing;
     public TimeSpan Position => _reader?.CurrentTime ?? TimeSpan.Zero;
-    public TimeSpan Duration => _reader?.TotalTime ?? TimeSpan.Zero;
+    public TimeSpan Duration => 
+        _isLiveStream ? TimeSpan.Zero : _reader?.TotalTime ?? TimeSpan.Zero;
 
     public void PlayFile(string filePath)
     {
         Stop();
 
         _reader = new AudioFileReader(filePath);
+        _output = new WaveOutEvent();
+        _output.Init(_reader);
+        _output.Play();
+    }
+    
+    public void PlayStream(string streamUrl)
+    {
+        Stop();
+        
+        _isLiveStream = true;
+        
+        _reader = new MediaFoundationReader(streamUrl);
         _output = new WaveOutEvent();
         _output.Init(_reader);
         _output.Play();
@@ -41,7 +55,7 @@ internal sealed class AudioPlayer : IDisposable
 
     public void SeekBy(TimeSpan delta)
     {
-        if (_reader is null) return;
+        if (_reader is null || _isLiveStream) return;
 
         var t = _reader.CurrentTime + delta;
         if (t < TimeSpan.Zero) t = TimeSpan.Zero;

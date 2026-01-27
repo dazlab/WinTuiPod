@@ -65,9 +65,10 @@ internal sealed class TuiApp
         {
             var actions = new List<string>
             {
-                "Open subscription",
-                "Add subscription",
-                "Remove subscription",
+                "Open a Podcast subscription",
+                "Add a Podcast subscription",
+                "Remove a subscription",
+                "Listen to Live Radio",
                 "Quit"
             };
 
@@ -83,7 +84,11 @@ internal sealed class TuiApp
             if (choice is null || choice == "Quit")
                 break;
 
-            if (choice == "Add subscription")
+            if (choice == "Listen to Live Radio")
+            {
+                await RadioMenuAsync();
+            }
+            else if (choice == "Add subscription")
             {
                 await AddSubscriptionAsync(subs);
                 await _store.SaveSubscriptionsAsync(subs);
@@ -168,6 +173,10 @@ internal sealed class TuiApp
         else if (_player.IsPlaying)
         {
             right = $"[green]Playing[/] {_player.Position:mm\\:ss}/{_player.Duration:mm\\:ss}";
+            if (_player.Duration == TimeSpan.Zero)
+                right = "[green]LIVE[/]";
+            else
+                right = $"[green]Playing[/] {_player.Position:mm\\:ss}/{_player.Duration:mm\\:ss}";
         }
         else if (_player.Duration > TimeSpan.Zero)
         {
@@ -232,6 +241,22 @@ internal sealed class TuiApp
         _isDownloading = false;
         _downloadPercent = 0;
     }
+    
+    private void StartRadio(string name, string url)
+    {
+        StopPlayback();
+
+        _nowPlayingEpisode = new Episode(
+            null,
+            name,
+            null,
+            url,
+            null);
+
+        _nowPlayingPath = null;
+
+        _player.PlayStream(url);
+    }
 
     private async Task StartPlayAsync(Episode ep)
     {
@@ -268,6 +293,32 @@ internal sealed class TuiApp
         finally
         {
             _playLock.Release();
+        }
+    }
+    
+    private async Task RadioMenuAsync()
+    {
+        var stations = new List<(string Name, string Url)>
+        {
+            ("BBC Radio 4", "http://as-hls-ww-live.akamaized.net/pool_55057080/live/ww/bbc_radio_fourfm/bbc_radio_fourfm.isml/bbc_radio_fourfm-audio%3d96000.norewind.m3u8"),
+            ("BBC Radio 6 Music", "https://stream.live.vc.bbcmedia.co.uk/bbc_6music"),
+            ("Radio Paradise", "https://stream.radioparadise.com/mp3-192")
+        };
+
+        while (true)
+        {
+            var selected = LiveSelect(
+                title: "Radio Stations",
+                help: "Enter: play   Esc: back   P: play/pause   S: stop",
+                items: stations,
+                line: s => Markup.Escape(s.Name),
+                footer: BuildNowPlayingFooter,
+                keyHandler: (key, _) => HandleGlobalPlaybackKeys(key));
+
+            if (selected == default)
+                return;
+
+            StartRadio(selected.Name, selected.Url);
         }
     }
 
