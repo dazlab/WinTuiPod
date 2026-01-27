@@ -14,3 +14,11 @@ internal sealed class AppState
 {
     public HashSet<string> PlayedEpisodeIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
+
+class RadioStation
+{
+    public string Name          { get; set; }
+    public string StreamUrl     { get; set; }
+    public string? Description  { get; set; }
+    public bool IsPlaying       { get; set; }
+}

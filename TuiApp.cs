@@ -191,19 +191,19 @@ internal sealed class TuiApp
 
     private bool HandleGlobalPlaybackKeys(ConsoleKeyInfo key)
     {
-        if (key.Key == ConsoleKey.T)
+        if (key.Key == ConsoleKey.F7)
         {
             Ui.NextTheme();
             return true; // force redraw
         }
 
-        if (key.Key == ConsoleKey.P)
+        if (key.Key == ConsoleKey.F5)
         {
             _player.TogglePause();
             return true;
         }
 
-        if (key.Key == ConsoleKey.S)
+        if (key.Key == ConsoleKey.F8)
         {
             StopPlayback();
             return true;
@@ -280,7 +280,7 @@ internal sealed class TuiApp
         if (url is null)
             return;
 
-        url = url.Trim();
+        //url = url.Trim();
         if (url.Length == 0)
             return;
 
