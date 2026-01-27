@@ -1,4 +1,5 @@
 using NAudio.Wave;
+using LibVLCSharp.Shared;
 
 namespace WinTuiPod;
 
@@ -66,3 +67,41 @@ internal sealed class AudioPlayer : IDisposable
 
     public void Dispose() => Stop();
 }
+
+internal sealed class RadioPlayer : IDisposable
+{
+    private readonly LibVLC _libVlc;
+    private readonly MediaPlayer _player;
+
+    public bool IsPlaying => _player.IsPlaying;
+
+    public RadioPlayer()
+    {
+        Core.Initialize();
+        _libVlc = new LibVLC("--no-video");
+        _player = new MediaPlayer(_libVlc);
+    }
+
+    public void Play(string url)
+    {
+        using var media = new Media(_libVlc, new Uri(url));
+        _player.Play(media);
+    }
+    
+    public void TogglePause()
+    {
+        if (_player.IsPlaying)
+            _player.Pause();
+        else
+            _player.Play();
+    }
+
+    public void Stop() => _player.Stop();
+
+    public void Dispose()
+    {
+        _player.Dispose();
+        _libVlc.Dispose();
+    }
+}
+

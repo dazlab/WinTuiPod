@@ -6,8 +6,16 @@ namespace WinTuiPod;
 
 internal sealed class TuiApp
 {
+    private readonly List<RadioStation> _radioStations = new()
+    {
+        new RadioStation { Name = "BBC Radio 4", StreamUrl = "http://as-hls-ww-live.akamaized.net/pool_55057080/live/ww/bbc_radio_fourfm/bbc_radio_fourfm.isml/bbc_radio_fourfm-audio%3d96000.norewind.m3u8" },
+        new RadioStation { Name = "BBC Radio 6 Music", StreamUrl = "https://stream.live.vc.bbcmedia.co.uk/bbc_6music" },
+        new RadioStation { Name = "Radio Paradise", StreamUrl = "https://stream.radioparadise.com/mp3-192" }
+    };
+
     private readonly DataStore _store;
     private readonly AudioPlayer _player;
+    private readonly RadioPlayer _radio;
 
     // Now Playing state
     private Episode? _nowPlayingEpisode;
@@ -15,6 +23,9 @@ internal sealed class TuiApp
 
     private volatile bool _isDownloading;
     private volatile int _downloadPercent; // 0..100
+    
+    private bool _isRadio;
+    private string? _nowPlayingRadioName;
 
     private readonly SemaphoreSlim _playLock = new(1, 1);
     
@@ -54,6 +65,7 @@ internal sealed class TuiApp
     {
         _store = store;
         _player = player;
+        _radio = new RadioPlayer();
     }
 
     public async Task RunAsync()
@@ -74,7 +86,7 @@ internal sealed class TuiApp
 
             var choice = LiveSelect(
                 title: "Select an action",
-                help: "Up/Down: move   Enter: select   Esc: quit   P: play/pause   S: stop   ←/→: seek",
+                help: "Up/Down: move   Enter: select   Esc: quit   P: play/pause   S: stop   ←/→: seek   T: theme",
                 items: actions,
                 line: s => Markup.Escape(s),
                 pageSize: 10,
@@ -84,49 +96,52 @@ internal sealed class TuiApp
             if (choice is null || choice == "Quit")
                 break;
 
-            if (choice == "Listen to Live Radio")
+            switch (choice)
             {
-                await RadioMenuAsync();
-            }
-            else if (choice == "Add subscription")
-            {
-                await AddSubscriptionAsync(subs);
-                await _store.SaveSubscriptionsAsync(subs);
-            }
-            else if (choice == "Remove subscription")
-            {
-                await RemoveSubscriptionAsync(subs);
-                await _store.SaveSubscriptionsAsync(subs);
-            }
-            else if (choice == "Open subscription")
-            {
-                if (subs.Count == 0)
-                {
-                    AnsiConsole.Clear();
-                    RenderHeader();
-                    AnsiConsole.MarkupLine("[yellow]No subscriptions yet.[/]");
-                    WaitKey();
-                    continue;
-                }
+                case "Listen to Live Radio":
+                    await RadioMenuAsync();
+                    break;
 
-                var sub = LiveSelect(
-                    title: "Select a feed",
-                    help: "Up/Down: move   Enter: select   Esc: back   P: play/pause   S: stop   ←/→: seek",
-                    items: subs,
-                    line: s => Markup.Escape(string.IsNullOrWhiteSpace(s.Title) ? s.FeedUrl : s.Title),
-                    pageSize: 15,
-                    footer: BuildNowPlayingFooter,
-                    keyHandler: (key, _) => HandleGlobalPlaybackKeys(key));
+                case "Add a Podcast subscription":
+                    await AddSubscriptionAsync(subs);
+                    await _store.SaveSubscriptionsAsync(subs);
+                    break;
 
-                if (sub is null)
-                    continue;
+                case "Remove a subscription":
+                    await RemoveSubscriptionAsync(subs);
+                    await _store.SaveSubscriptionsAsync(subs);
+                    break;
 
-                await BrowseFeedAsync(sub, state);
-                await _store.SaveStateAsync(state);
+                case "Open a Podcast subscription":
+                    if (subs.Count == 0)
+                    {
+                        AnsiConsole.Clear();
+                        RenderHeader();
+                        AnsiConsole.MarkupLine("[yellow]No subscriptions yet.[/]");
+                        WaitKey();
+                        break;
+                    }
+
+                    var sub = LiveSelect(
+                        title: "Select a feed",
+                        help: "Up/Down: move   Enter: select   Esc: back   P: play/pause   S: stop   ←/→: seek",
+                        items: subs,
+                        line: s => Markup.Escape(string.IsNullOrWhiteSpace(s.Title) ? s.FeedUrl : s.Title),
+                        pageSize: 15,
+                        footer: BuildNowPlayingFooter,
+                        keyHandler: (key, _) => HandleGlobalPlaybackKeys(key));
+
+                    if (sub is null)
+                        break;
+
+                    await BrowseFeedAsync(sub, state);
+                    await _store.SaveStateAsync(state);
+                    break;
             }
         }
 
         StopPlayback();
+        _radio.Dispose();
     }
 
     private static void RenderHeader()
@@ -164,6 +179,11 @@ internal sealed class TuiApp
         var left = "[grey]Idle[/]";
         if (_nowPlayingEpisode is not null)
             left = $"[bold]{Markup.Escape(_nowPlayingEpisode.Title)}[/]";
+        
+        if (_isRadio && _nowPlayingRadioName is not null)
+            left = $"[bold]{Markup.Escape(_nowPlayingRadioName)}[/]";
+        else if (_nowPlayingEpisode is not null)
+            left = $"[bold]{Markup.Escape(_nowPlayingEpisode.Title)}[/]";
 
         string right;
         if (_isDownloading)
@@ -173,7 +193,7 @@ internal sealed class TuiApp
         else if (_player.IsPlaying)
         {
             right = $"[green]Playing[/] {_player.Position:mm\\:ss}/{_player.Duration:mm\\:ss}";
-            if (_player.Duration == TimeSpan.Zero)
+            if (_isRadio)
                 right = "[green]LIVE[/]";
             else
                 right = $"[green]Playing[/] {_player.Position:mm\\:ss}/{_player.Duration:mm\\:ss}";
@@ -181,6 +201,10 @@ internal sealed class TuiApp
         else if (_player.Duration > TimeSpan.Zero)
         {
             right = $"[yellow]Paused[/] {_player.Position:mm\\:ss}/{_player.Duration:mm\\:ss}";
+        }
+        else if (_isRadio && _radio.IsPlaying)
+        {
+            right = "[green]LIVE[/]";
         }
         else
         {
@@ -203,12 +227,15 @@ internal sealed class TuiApp
         if (key.Key == ConsoleKey.F7)
         {
             Ui.NextTheme();
-            return true; // force redraw
+            return true; 
         }
 
         if (key.Key == ConsoleKey.F5)
         {
-            _player.TogglePause();
+            if (_isRadio)
+                _radio.TogglePause();
+            else
+                _player.TogglePause();
             return true;
         }
 
@@ -236,6 +263,11 @@ internal sealed class TuiApp
     private void StopPlayback()
     {
         _player.Stop();
+        _radio.Stop();
+        
+        _isRadio = false;
+        _nowPlayingRadioName = null;
+        
         _nowPlayingEpisode = null;
         _nowPlayingPath = null;
         _isDownloading = false;
@@ -246,16 +278,10 @@ internal sealed class TuiApp
     {
         StopPlayback();
 
-        _nowPlayingEpisode = new Episode(
-            null,
-            name,
-            null,
-            url,
-            null);
+        _isRadio = true;
+        _nowPlayingRadioName = name;
 
-        _nowPlayingPath = null;
-
-        _player.PlayStream(url);
+        _radio.Play(url);
     }
 
     private async Task StartPlayAsync(Episode ep)

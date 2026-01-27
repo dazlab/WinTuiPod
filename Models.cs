@@ -17,8 +17,8 @@ internal sealed class AppState
 
 class RadioStation
 {
-    public string Name          { get; set; }
-    public string StreamUrl     { get; set; }
-    public string? Description  { get; set; }
-    public bool IsPlaying       { get; set; }
+    public required string Name          { get; set; }
+    public required string StreamUrl     { get; set; }
+    public string? Description           { get; set; }
+    public bool IsPlaying                { get; set; }
 }
