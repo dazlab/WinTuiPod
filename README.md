@@ -4,6 +4,7 @@
 [![Issues](https://img.shields.io/github/issues/dazlab/WinTuiPod)](https://github.com/dazlab/WinTuiPod/issues)
 ![Downloads](https://img.shields.io/github/downloads/dazlab/WinTuiPod/total?cacheBust=2)
 [![Build](https://github.com/dazlab/WinTuiPod/actions/workflows/dotnet.yml/badge.svg?branch=master&cacheBust=1)](https://github.com/dazlab/WinTuiPod/actions/workflows/dotnet.yml)
+[![Dev](https://github.com/dazlab/WinTuiPod/actions/workflows/dotnet.yml/badge.svg?branch=development&cacheBust=1)](https://github.com/dazlab/WinTuiPod/actions/workflows/dotnet.yml)
 
 ## Current Development Branch Diffs with `master`
 Implemented:
@@ -18,33 +19,13 @@ WinTuiPod is part of a small family of Windows-native TUI applications:
 - **[WinTuiEditor](https://github.com/dazlab/WinTuiEditor)** — a simple, terminal-based text editor  
 - **WinTuiPod** — podcasts, from the terminal
 
-Each project focuses on doing one thing well, entirely from the command line, using a consistent approach and tooling.
-
-## Why?
-
-Windows has excellent terminals now— Windows Terminal, PowerShell, modern consoles— but the software ecosystem hasn’t caught up.
-
-WinTuiPod is an attempt to prove that **terminal applications on Windows don’t have to feel like second-class citizens**.
-
 ## Status
 
-This project is actively developed. Features, behaviour, and UI are still evolving.
+Active development is done in the development branch. Features, behaviour, and UI are still evolving and the current
+development build may not even build at the time you clone into it, so if you're looking to try it out, use the
+[Release Build](https://github.com/dazlab/WinTuiPod/releases) page to download a version release.
 
 Contributions, feedback, and bug reports are welcome.
-
-## Screenshots
-### Main Startup Screen
-![WinTuiRss main screen](screenshots/ui-main.png)
-
-### Podcast Playlist
-![WinTuiRss main screen](screenshots/ui-playlist.png)
-
-### Integrated Player
-![WinTuiRss main screen](screenshots/ui-player.png)
-
-## Download
-
-This project is currently in Alpha, but there is a version 0.1.0 x64 binary on the GitHub **Releases** page.
 
 ## Requirements
 
