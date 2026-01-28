@@ -10,6 +10,26 @@
 Implemented:
 - [ ✅ ] Live Radio Broadcast
 
+Working on:
+- [ ⏳ ] Upgrading all menus and workflows
+- [ ⏳ ] Playback logic
+- [ ⏳ ] Key handling
+- [ ⏳ ] Theme system
+
+## Planning
+
+Right now, every `LiveSelect()` builds this:
+- Header
+- Title
+- Help
+- Table
+- Footer (now playing)
+
+This will become:
+- Header
+- Nav | Main | Now Playing
+- Status
+
 ## Part of a TUI Suite
 
 WinTuiPod is part of a small family of Windows-native TUI applications:
