@@ -1,4 +1,4 @@
-![Header](screenshots/github-header-banner.png)
+![Header](screenshots/github-header-banner-dev.png)
 
 [![License](https://img.shields.io/github/license/dazlab/WinTuiPod)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/dazlab/WinTuiPod)](https://github.com/dazlab/WinTuiPod/issues)
