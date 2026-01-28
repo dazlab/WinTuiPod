@@ -5,24 +5,9 @@
 ![Downloads](https://img.shields.io/github/downloads/dazlab/WinTuiPod/total?cacheBust=2)
 [![Build](https://github.com/dazlab/WinTuiPod/actions/workflows/dotnet.yml/badge.svg?branch=master&cacheBust=1)](https://github.com/dazlab/WinTuiPod/actions/workflows/dotnet.yml)
 
-If you’re like me, you spend a lot of time on the command line. On Linux, that’s second nature; terminal users are first-class citizens on *nix systems. 
-On Windows, it’s still oddly uncomfortable— and the ecosystem of *native*, terminal-first tools is thin.
-
-Podcast apps are a good example. There are plenty of GUI players, but virtually **no proper command-line podcast applications for Windows**.
-
-**WinTuiPod** exists to fill that gap.
-
-## What is WinTuiPod?
-
-WinTuiPod is a terminal-based podcast client for Windows, built as a native TUI (Text User Interface).  
-It is designed to be:
-
-- Fully usable from the terminal  
-- Keyboard-driven  
-- Fast, lightweight, and distraction-free  
-- Native to Windows (not a Linux port or WSL dependency)
-
-No Electron. No browser UI. Just a clean terminal experience.
+## Current Development Branch Diffs with `master`
+Implemented:
+- [ ✅ ] Live Radio Broadcast
 
 ## Part of a TUI Suite
 
